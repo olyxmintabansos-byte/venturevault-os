@@ -9,6 +9,8 @@ export interface Shareholder {
   initialInvestmentUSD: number;
   vestingMonths: number;
   vestingCliffMonths: number;
+  liquidationPreferenceMultiple?: number; // e.g. 1.0x
+  isParticipating?: boolean;
 }
 
 export interface FundingRound {
@@ -33,10 +35,38 @@ export interface SafeNote {
   convertedSharesCount?: number;
 }
 
-export interface WaterfallExitTier {
-  exitValuationUSD: number;
+export interface WaterfallPayoutItem {
+  shareholderId: string;
+  shareholderName: string;
+  shareClass: ShareClass;
+  preferencePayoutUSD: number;
   commonProceedsUSD: number;
-  preferredProceedsUSD: number;
-  commonMultiple: number;
-  preferredMultiple: number;
+  totalProceedsUSD: number;
+  moicMultiple: number; // Multiple on Invested Capital
+  effectiveOwnershipPct: number;
+}
+
+export interface TermSheetClause {
+  category: string;
+  title: string;
+  content: string;
+  isStandardNvca: boolean;
+}
+
+export interface TermSheetData {
+  companyName: string;
+  leadInvestor: string;
+  investmentAmountUSD: number;
+  preMoneyValuationUSD: number;
+  postMoneyValuationUSD: number;
+  sharePriceUSD: number;
+  shareClass: "Series A Preferred";
+  optionPoolPercentage: number;
+  liquidationPreference: "1x Non-Participating";
+  boardComposition: string;
+  votingRights: string;
+  protectiveProvisions: string[];
+  closingDate: string;
+  authorizedSignatoryInvestor: string;
+  authorizedSignatoryFounder: string;
 }

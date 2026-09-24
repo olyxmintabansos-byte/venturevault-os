@@ -8,19 +8,23 @@ import {
   PieChart,
   Calculator,
   ArrowUpRight,
-  TrendingUp,
-  Layers,
+  TrendingDown,
+  FileCheck2,
 } from "lucide-react";
 import { useVenture } from "@/context/VentureContext";
 import { formatUSD } from "@/lib/utils";
 
 export function Navbar() {
   const pathname = usePathname();
-  const { currentValuationUSD, totalShares } = useVenture();
+  const { currentValuationUSD, safes } = useVenture();
+
+  const outstandingSafes = safes.filter((s) => s.status === "OUTSTANDING").length;
 
   const navLinks = [
-    { name: "Cap Table Matrix", href: "/", icon: PieChart },
-    { name: "SAFE Notes Converter", href: "/safe/", icon: Calculator },
+    { name: "Cap Table Matrix", href: "/", icon: PieChart, badge: undefined as number | undefined },
+    { name: "SAFE Converter", href: "/safe/", icon: Calculator, badge: outstandingSafes > 0 ? outstandingSafes : undefined },
+    { name: "M&A Waterfall Simulator", href: "/waterfall/", icon: TrendingDown, badge: undefined as number | undefined },
+    { name: "NVCA Term Sheet A4", href: "/term-sheet/", icon: FileCheck2, badge: undefined as number | undefined },
   ];
 
   return (
@@ -36,7 +40,7 @@ export function Navbar() {
               <div className="flex items-center gap-2">
                 <span className="font-black text-white text-base tracking-wider">VENTUREVAULT</span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
-                  PE &amp; VC TITAN 13
+                  TITAN 13
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">Cap Table Modeling &amp; Dilution Waterfall Engine</p>
@@ -45,15 +49,15 @@ export function Navbar() {
         </div>
 
         {/* Navigation & Live Valuation HUD */}
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0a1024] border border-slate-800 text-xs">
-            <span className="text-[10px] text-slate-400 uppercase font-mono">Post-Money:</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0a1024] border border-slate-800 text-xs">
+            <span className="text-[10px] text-slate-400 uppercase font-mono">Valuation:</span>
             <span className="font-black text-emerald-400 font-mono">
               {formatUSD(currentValuationUSD)}
             </span>
           </div>
 
-          <nav className="flex items-center gap-1.5 sm:gap-2">
+          <nav className="flex items-center gap-1 sm:gap-1.5">
             {navLinks.map((link) => {
               const Icon = link.icon;
               const isActive = pathname === link.href || (link.href !== "/" && pathname?.startsWith(link.href));
@@ -70,6 +74,15 @@ export function Navbar() {
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span className="hidden md:inline">{link.name}</span>
+                  {link.badge !== undefined && (
+                    <span
+                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                        isActive ? "bg-slate-950 text-emerald-400" : "bg-emerald-500 text-slate-950"
+                      }`}
+                    >
+                      {link.badge}
+                    </span>
+                  )}
                 </Link>
               );
             })}

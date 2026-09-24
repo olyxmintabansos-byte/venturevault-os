@@ -1,7 +1,13 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { Shareholder, FundingRound, SafeNote } from "@/types/venture";
+import {
+  Shareholder,
+  FundingRound,
+  SafeNote,
+  WaterfallPayoutItem,
+  TermSheetData,
+} from "@/types/venture";
 
 const INITIAL_SHAREHOLDERS: Shareholder[] = [
   {
@@ -43,6 +49,8 @@ const INITIAL_SHAREHOLDERS: Shareholder[] = [
     initialInvestmentUSD: 2000000,
     vestingMonths: 0,
     vestingCliffMonths: 0,
+    liquidationPreferenceMultiple: 1.0,
+    isParticipating: false,
   },
 ];
 
@@ -90,10 +98,34 @@ const INITIAL_SAFES: SafeNote[] = [
   },
 ];
 
+const INITIAL_TERMSHEET: TermSheetData = {
+  companyName: "VentureVault Systems Inc.",
+  leadInvestor: "Horizon Horizon Capital Partners VII",
+  investmentAmountUSD: 8000000,
+  preMoneyValuationUSD: 32000000,
+  postMoneyValuationUSD: 40000000,
+  sharePriceUSD: 3.2,
+  shareClass: "Series A Preferred",
+  optionPoolPercentage: 10,
+  liquidationPreference: "1x Non-Participating",
+  boardComposition: "2 Founders (CEO & CTO), 1 Horizon Partner, 1 Mutual Independent Industry Expert",
+  votingRights: "Pari-passu on as-converted basis, with standard protective provisions for key corporate acts.",
+  protectiveProvisions: [
+    "Amendments to Certificate of Incorporation adversely affecting Series A",
+    "Creation or authorization of senior or pari-passu equity securities",
+    "Any M&A merger, asset sale, or liquidation event under $50M",
+    "Declaration or payment of any dividend on Common or Preferred stock",
+  ],
+  closingDate: "2026-11-15",
+  authorizedSignatoryInvestor: "Marcus Vance, General Partner (Horizon Capital)",
+  authorizedSignatoryFounder: "Alex Vane, Chief Executive Officer",
+};
+
 interface VentureContextType {
   shareholders: Shareholder[];
   rounds: FundingRound[];
   safes: SafeNote[];
+  termSheet: TermSheetData;
   totalShares: number;
   currentValuationUSD: number;
   addShareholder: (s: Omit<Shareholder, "id">) => void;
@@ -103,6 +135,8 @@ interface VentureContextType {
     capitalRaised: number
   ) => void;
   convertSafeNotes: (nextRoundPriceUSD: number) => void;
+  calculateWaterfall: (exitValuationUSD: number) => WaterfallPayoutItem[];
+  updateTermSheet: (data: Partial<TermSheetData>) => void;
 }
 
 const VentureContext = createContext<VentureContextType | undefined>(undefined);
@@ -111,6 +145,7 @@ export function VentureProvider({ children }: { children: React.ReactNode }) {
   const [shareholders, setShareholders] = useState<Shareholder[]>(INITIAL_SHAREHOLDERS);
   const [rounds, setRounds] = useState<FundingRound[]>(INITIAL_ROUNDS);
   const [safes, setSafes] = useState<SafeNote[]>(INITIAL_SAFES);
+  const [termSheet, setTermSheet] = useState<TermSheetData>(INITIAL_TERMSHEET);
 
   // LocalStorage Persistence
   useEffect(() => {
@@ -169,6 +204,8 @@ export function VentureProvider({ children }: { children: React.ReactNode }) {
       initialInvestmentUSD: capitalRaised,
       vestingMonths: 0,
       vestingCliffMonths: 0,
+      liquidationPreferenceMultiple: 1.0,
+      isParticipating: false,
     };
 
     setRounds((prev) => [...prev, newRound]);
@@ -185,7 +222,6 @@ export function VentureProvider({ children }: { children: React.ReactNode }) {
         const conversionPrice = Math.min(effectiveCapPrice, discountPrice);
         const sharesEarned = Math.round(safe.investmentAmountUSD / conversionPrice);
 
-        // Add to shareholders
         addShareholder({
           name: `${safe.investorName} (Converted SAFE)`,
           role: "Angel Investor",
@@ -194,6 +230,8 @@ export function VentureProvider({ children }: { children: React.ReactNode }) {
           initialInvestmentUSD: safe.investmentAmountUSD,
           vestingMonths: 0,
           vestingCliffMonths: 0,
+          liquidationPreferenceMultiple: 1.0,
+          isParticipating: false,
         });
 
         return {
@@ -205,17 +243,86 @@ export function VentureProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const calculateWaterfall = (exitValuationUSD: number): WaterfallPayoutItem[] => {
+    let remainingExitPool = exitValuationUSD;
+
+    // Step 1: Payout 1x Liquidation Preferences to Preferred Shareholders
+    const preferencePayouts: Record<string, number> = {};
+    let totalPreferencesPaid = 0;
+
+    shareholders.forEach((s) => {
+      if (s.liquidationPreferenceMultiple && s.initialInvestmentUSD > 0) {
+        const prefAmount = s.initialInvestmentUSD * s.liquidationPreferenceMultiple;
+        const actualPayout = Math.min(remainingExitPool, prefAmount);
+        preferencePayouts[s.id] = actualPayout;
+        totalPreferencesPaid += actualPayout;
+        remainingExitPool -= actualPayout;
+      } else {
+        preferencePayouts[s.id] = 0;
+      }
+    });
+
+    // Step 2: Check conversion threshold (1x Non-Participating: if as-converted share is greater, convert)
+    return shareholders.map((s) => {
+      const ownershipRatio = s.sharesCount / totalShares;
+      const asConvertedPayout = exitValuationUSD * ownershipRatio;
+      const prefPayout = preferencePayouts[s.id] || 0;
+
+      let totalProceeds = 0;
+      let preferenceUsed = 0;
+      let commonUsed = 0;
+
+      if (s.shareClass === "Common" || s.role === "Founder" || s.role === "ESOP Pool") {
+        totalProceeds = remainingExitPool * (s.sharesCount / (totalShares - 1000000));
+        commonUsed = totalProceeds;
+      } else {
+        if (asConvertedPayout > prefPayout) {
+          totalProceeds = asConvertedPayout;
+          commonUsed = asConvertedPayout;
+        } else {
+          totalProceeds = prefPayout;
+          preferenceUsed = prefPayout;
+        }
+      }
+
+      const moic =
+        s.initialInvestmentUSD > 0
+          ? totalProceeds / s.initialInvestmentUSD
+          : totalProceeds > 0
+          ? 999.0
+          : 0;
+
+      return {
+        shareholderId: s.id,
+        shareholderName: s.name,
+        shareClass: s.shareClass,
+        preferencePayoutUSD: Math.round(preferenceUsed),
+        commonProceedsUSD: Math.round(commonUsed),
+        totalProceedsUSD: Math.round(totalProceeds),
+        moicMultiple: Number(moic.toFixed(2)),
+        effectiveOwnershipPct: Number(((totalProceeds / exitValuationUSD) * 100).toFixed(2)),
+      };
+    });
+  };
+
+  const updateTermSheet = (data: Partial<TermSheetData>) => {
+    setTermSheet((prev) => ({ ...prev, ...data }));
+  };
+
   return (
     <VentureContext.Provider
       value={{
         shareholders,
         rounds,
         safes,
+        termSheet,
         totalShares,
         currentValuationUSD,
         addShareholder,
         simulateNewFundingRound,
         convertSafeNotes,
+        calculateWaterfall,
+        updateTermSheet,
       }}
     >
       {children}
